@@ -2,7 +2,7 @@
 write_files:
   - path: /tmp/test
     content: |
-        YAML is a menace
+        YAML is wonderful
 coreos:
   units:
     - name: etcd.service
@@ -11,7 +11,7 @@ coreos:
     - name: fleet.service
       command: start
   etcd:
-    discovery: https://discovery.etcd.io/a37ec16af29fc3ef721f0731c91e35bc
+    discovery: https://discovery.etcd.io/d259912ba681a5ce1731e55243f13fa3
     addr: "$private_ipv4:4001"
     peer-addr: "$private_ipv4:7001"
 
