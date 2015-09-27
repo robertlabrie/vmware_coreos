@@ -1,4 +1,22 @@
-﻿#hashmap of props for all machines
+﻿<#
+A script to build and maintain a CoreOS cluster
+- Builds any machines that don't exist
+- Stops and updates machine .vmx file as necessary
+- Waits for machine to start before taking down and updating next node
+
+Author: robert.labrie@gmail.com
+#>
+
+#list of machines to make - hostname will be set to this unless overridden
+$vmlist = @('coreos0','coreos1','coreos2')
+
+#hashmap of machine specific properties
+$vminfo = @{}
+$vminfo['coreos0'] = @{'interface.0.ip.0.address'='192.168.229.20/24'}
+$vminfo['coreos1'] = @{'interface.0.ip.0.address'='192.168.229.21/24'}
+$vminfo['coreos2'] = @{'interface.0.ip.0.address'='192.168.229.22/24'}
+
+#hashmap of properties common for all machines
 $gProps = @{
     'dns.server.0'='192.168.229.2';
     'interface.0.route.0.gateway'='192.168.229.2';
@@ -7,16 +25,6 @@ $gProps = @{
     'interface.0.role'='private';
     'interface.0.dhcp'='no';}
 
-#list of machines to make - hostname will be set to this unless overridden
-$vmlist = @('coreos0','coreos1','coreos2')
-
-#vm specific overrides
-$vminfo = @{}
-$vminfo['coreos0'] = @{'interface.0.ip.0.address'='192.168.229.20/24'}
-$vminfo['coreos1'] = @{'interface.0.ip.0.address'='192.168.229.21/24'}
-$vminfo['coreos2'] = @{'interface.0.ip.0.address'='192.168.229.22/24'}
-
-
 #pack in the cloud config
 if (Test-Path .\cloud-config.yml)
 {
@@ -24,12 +32,13 @@ if (Test-Path .\cloud-config.yml)
     $b = [System.Text.Encoding]::UTF8.GetBytes($cc)
     $gProps['coreos.config.data'] = [System.Convert]::ToBase64String($b)
     $gProps['coreos.config.data.encoding'] = 'base64'
-    #$gProps['coreos.config.data'] = "I2Nsb3VkLWNvbmZpZw0Kd3JpdGVfZmlsZXM6DQogIC0gcGF0aDogL3RtcC90ZXN0DQogICAgY29udGVudDogfA0KICAgICAgICBZQU1MIGlzIGEgbWVuYWNlDQoNCnNzaF9hdXRob3JpemVkX2tleXM6DQogIC0gc3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFEdGpUWnhXWGxKTlRjTkxxNDVGN2hDOGZZMDV2bWdueXlWNWhNMVVwRUU3NkNrbHZ3Tzl1TnhiTWw3QVVETDJaOHlTTmNhdXlyZkUxeUVmOTZKd1cxYWl0bkZTSVMraWFWSU1VMmEvdjFGaE0yN09MWUNlK2U5T0oyWU8vWThldHhrRXdXbXZtRUhJRFVXTGFjNW1xQUcxanpNdGhpMm16bFZ1UkVXbWNzV3M3MUtMM0pNVW9qcFFQd0J6WktNUlFiUURsbXU4MjhVWi9icEJKamhiK0t0YldHb2FNUDdiZUordUx3d3BwZ1lkanRUWEsrM2pEajVwSWVUL28wLzlQcm50VjExMXZkeEZNeHVIN1A2bU4vK08raU5WQU9MeUNCc0VwcHhyc2crNXdNaW1jZnUzOGpRSlg1MTY3UUM2b0t0SWliSEtyeGlXWGxMVEhrTHNRbkggcm9iQHVidW50dTANCg=="
 }
 
+#load VMWare snapin and connect
 Add-PSSnapin VMware.VimAutomation.Core
 if (!($global:DefaultVIServers.Count)) { Connect-VIServer 192.168.229.10 }
 
+#build the VMs as necessary
 $template = Get-Template -Name "coreos_alpha"
 $vmhost = Get-VMHost
 $tasks = @()
@@ -40,6 +49,8 @@ foreach ($vmname in $vmlist)
     $task = New-VM -Template $template -Name $vmname -host $vmhost -RunAsync
     $tasks += $task
 }
+
+#wait for pending builds to complete
 if ($tasks)
 {
     Write-Host "Waiting for clones to complete"
@@ -48,11 +59,14 @@ if ($tasks)
         Wait-Task $task
     }
 }
+
+#setup and send the config
 foreach ($vmname in $vmlist)
 {
     $vmxLocal = "$($ENV:TEMP)\$($vmname).vmx"
     $vm = Get-VM -Name $vmname
     
+    #power off if running
     if ($vm.PowerState -eq "PoweredOn") { $vm | Stop-VM -Confirm:$false }
 
     #fetch the VMX file
@@ -72,7 +86,6 @@ foreach ($vmname in $vmlist)
     $vminfo[$vmname].Keys | ForEach-Object {
         $props[$_] = $vminfo[$vmname][$_]
     }
-    #$props
 
     #add to the VMX
     $props.Keys | ForEach-Object {
@@ -82,10 +95,10 @@ foreach ($vmname in $vmlist)
     #write out the VMX
     $vmx | Out-File $vmxLocal -Encoding ascii
 
-    #replace the item
+    #replace the VMX in the datastore
     Copy-DatastoreItem -Item $vmxLocal -Destination $vmxRemote
 
-    Write-host "$vmname starting"
+    #start the VM
     $vm | Start-VM
     $status = "toolsNotRunning"
     while ($status -eq "toolsNotRunning")
