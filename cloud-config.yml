@@ -1,0 +1,21 @@
+#cloud-config
+write_files:
+  - path: /tmp/test
+    content: |
+        YAML is a menace
+coreos:
+  units:
+    - name: etcd.service
+      command: start
+
+    - name: fleet.service
+      command: start
+  etcd:
+    discovery: https://discovery.etcd.io/a37ec16af29fc3ef721f0731c91e35bc
+    addr: "$private_ipv4:4001"
+    peer-addr: "$private_ipv4:7001"
+
+  fleet:
+    public-ip: "$private_ipv4"
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDtjTZxWXlJNTcNLq45F7hC8fY05vmgnyyV5hM1UpEE76CklvwO9uNxbMl7AUDL2Z8ySNcauyrfE1yEf96JwW1aitnFSIS+iaVIMU2a/v1FhM27OLYCe+e9OJ2YO/Y8etxkEwWmvmEHIDUWLac5mqAG1jzMthi2mzlVuREWmcsWs71KL3JMUojpQPwBzZKMRQbQDlmu828UZ/bpBJjhb+KtbWGoaMP7beJ+uLwwppgYdjtTXK+3jDj5pIeT/o0/9PrntV111vdxFMxuH7P6mN/+O+iNVAOLyCBsEppxrsg+5wMimcfu38jQJX5167QC6oKtIibHKrxiWXlLTHkLsQnH rob@ubuntu0
